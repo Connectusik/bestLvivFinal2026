@@ -1,0 +1,39 @@
+{
+	email {$ACME_EMAIL}
+	servers {
+		timeouts {
+			read_body 5m
+			read_header 30s
+			write 5m
+			idle 5m
+		}
+	}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	request_body {
+		max_size 200MB
+	}
+
+	reverse_proxy app:8000 {
+		header_up X-Real-IP {remote_host}
+		transport http {
+			read_timeout 5m
+			write_timeout 5m
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
