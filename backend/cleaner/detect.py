@@ -29,6 +29,12 @@ from dataclasses import dataclass, field
 from statistics import median
 from typing import Any, Iterable
 
+from .references import (
+    edrpou_checksum_valid,
+    koatuu as _koatuu_ref,
+    tax_rates as _tax_rates_ref,
+)
+
 # Column indexes in cleaned rows --------------------------------------------
 # land (17): 0 cadastral, 1 koatuu, 2 owner_name, 3 tax_id, 4 ownership_form,
 #            5 purpose, 6 address, 7 ag_type, 8 area_ha, 9 value_uah,
@@ -104,16 +110,6 @@ def build_index(land: list[list[Any]], realestate: list[list[Any]]) -> Index:
 # Helpers
 # ---------------------------------------------------------------------------
 
-_KOATUU_OBLAST_KEYWORDS = {
-    "46": "львівська",
-    "05": "вінницька",
-    "07": "волинська",
-    "21": "закарпатська",
-    "26": "івано-франківська",
-    "61": "тернопільська",
-    "68": "хмельницька",
-}
-
 _PUBLIC_KEYWORDS = ("рада", "адміністрація", "управлінн", "міністерств", "держ", "комунал")
 
 _RESIDENTIAL_PURPOSE_KEYWORDS = (
@@ -132,6 +128,7 @@ def _is_public_owner(name: str) -> bool:
 
 
 def detect_missing_cadastral(ix: Index) -> Iterable[Finding]:
+    rates = _tax_rates_ref()
     for i, row in enumerate(ix.land):
         if not row[0]:
             yield Finding(
@@ -151,11 +148,12 @@ def detect_missing_cadastral(ix: Index) -> Iterable[Finding]:
                 land_excel_rows=[i + 2],
                 owner_id=row[3] or "",
                 owner_name=row[2] or "",
-                exposure_uah=row[9] or 0.0,
+                exposure_uah=rates.project_land_tax(row[9], row[10], row[1]),
             )
 
 
 def detect_missing_owner_id(ix: Index) -> Iterable[Finding]:
+    rates = _tax_rates_ref()
     for i, row in enumerate(ix.land):
         if not row[3]:
             yield Finding(
@@ -173,17 +171,21 @@ def detect_missing_owner_id(ix: Index) -> Iterable[Finding]:
                 },
                 land_excel_rows=[i + 2],
                 owner_name=row[2] or "",
-                exposure_uah=row[9] or 0.0,
+                exposure_uah=rates.project_land_tax(row[9], row[10], row[1]),
             )
 
 
 def detect_duplicate_cadastral(ix: Index) -> Iterable[Finding]:
+    rates = _tax_rates_ref()
     for cadastral, entries in ix.land_by_cadastral.items():
         if len(entries) < 2:
             continue
         distinct = {row[3] for _, row in entries if row[3]}
         if len(distinct) < 2:
             continue
+        exposure = sum(
+            rates.project_land_tax(r[9], r[10], r[1]) for _, r in entries
+        )
         yield Finding(
             kind="duplicate_cadastral",
             severity="critical",
@@ -202,11 +204,12 @@ def detect_duplicate_cadastral(ix: Index) -> Iterable[Finding]:
             },
             land_excel_rows=[r for r, _ in entries],
             owner_name=entries[0][1][2] or "",
-            exposure_uah=sum((r[9] or 0.0) for _, r in entries),
+            exposure_uah=round(exposure, 2),
         )
 
 
 def detect_missing_area(ix: Index) -> Iterable[Finding]:
+    rates = _tax_rates_ref()
     for i, row in enumerate(ix.land):
         if row[8] is None:
             yield Finding(
@@ -225,15 +228,17 @@ def detect_missing_area(ix: Index) -> Iterable[Finding]:
                 land_excel_rows=[i + 2],
                 owner_id=row[3] or "",
                 owner_name=row[2] or "",
-                exposure_uah=row[9] or 0.0,
+                exposure_uah=rates.project_land_tax(row[9], row[10], row[1]),
             )
 
 
 def detect_residential_no_building(ix: Index) -> Iterable[Finding]:
     """Residential-purpose land parcel whose owner has zero registered real
     estate. Strong indicator of an undeclared building — direct property-tax
-    leakage.
+    leakage. Exposure = projected property tax on an estimated 120 m² house
+    (conservative lower bound of what's usually built on such a parcel).
     """
+    rates = _tax_rates_ref()
     for owner_id, entries in ix.land_by_owner.items():
         if owner_id in ix.re_by_owner:
             continue
@@ -247,7 +252,14 @@ def detect_residential_no_building(ix: Index) -> Iterable[Finding]:
         if not residential:
             continue
         total_area = sum((row[8] or 0.0) for _, row in residential)
-        total_value = sum((row[9] or 0.0) for _, row in residential)
+        # Assume a minimal 150 m² house per residential parcel as lower
+        # bound of the undeclared building that the parcel implies.
+        assumed_m2 = 150.0 * len(residential)
+        property_tax_loss = rates.project_property_tax(assumed_m2, "будинок", 1.0)
+        # Add land tax that is definitely being missed too.
+        land_tax_loss = sum(
+            rates.project_land_tax(row[9], row[10], row[1]) for _, row in residential
+        )
         yield Finding(
             kind="residential_no_building",
             severity="high",
@@ -264,11 +276,14 @@ def detect_residential_no_building(ix: Index) -> Iterable[Finding]:
                 "total_area_ha": round(total_area, 4),
                 "sample_cadastrals": [row[0] for _, row in residential[:5]],
                 "sample_addresses": list({row[6] for _, row in residential[:5] if row[6]})[:3],
+                "assumed_building_m2": assumed_m2,
+                "projected_land_tax_uah": round(land_tax_loss, 2),
+                "projected_property_tax_uah": round(property_tax_loss, 2),
             },
             land_excel_rows=[r for r, _ in residential],
             owner_id=owner_id,
             owner_name=owner_name,
-            exposure_uah=total_value,
+            exposure_uah=round(land_tax_loss + property_tax_loss, 2),
         )
 
 
@@ -287,6 +302,10 @@ def detect_name_mismatch(ix: Index) -> Iterable[Finding]:
             continue
         if land_names & re_names:
             continue
+        rates = _tax_rates_ref()
+        exposure = sum(
+            rates.project_land_tax(row[9], row[10], row[1]) for _, row in land_entries
+        )
         yield Finding(
             kind="name_mismatch",
             severity="high",
@@ -304,44 +323,94 @@ def detect_name_mismatch(ix: Index) -> Iterable[Finding]:
             re_excel_rows=[r for r, _ in re_entries],
             owner_id=owner_id,
             owner_name=next(iter(land_names)),
-            exposure_uah=sum((row[9] or 0.0) for _, row in land_entries),
+            exposure_uah=round(exposure, 2),
         )
 
 
 def detect_koatuu_address_mismatch(ix: Index) -> Iterable[Finding]:
+    ref = _koatuu_ref()
+    rates = _tax_rates_ref()
     for i, row in enumerate(ix.land):
         koatuu = row[1]
         address = row[6]
         if not koatuu or not address:
             continue
-        prefix = str(koatuu)[:2]
-        expected = _KOATUU_OBLAST_KEYWORDS.get(prefix)
-        if expected is None:
+        oblast = ref.oblast_name(koatuu)
+        keywords = ref.oblast_keywords(koatuu)
+        if not oblast or not keywords:
             continue
-        if expected not in address.lower():
-            yield Finding(
-                kind="koatuu_address_mismatch",
-                severity="medium",
-                title="КОАТУУ не відповідає області в адресі",
-                description=(
-                    f"Код КОАТУУ починається на {prefix} (очікувана область "
-                    f"— {expected.title()}), але у полі «Адреса» цієї області "
-                    "немає."
-                ),
-                evidence={
-                    "koatuu": koatuu,
-                    "expected_oblast": expected,
-                    "address": address,
-                    "cadastral": row[0],
-                },
-                land_excel_rows=[i + 2],
-                owner_id=row[3] or "",
-                owner_name=row[2] or "",
-                exposure_uah=0.0,
-            )
+        addr_lc = address.lower()
+        if any(kw in addr_lc for kw in keywords):
+            continue
+        rayon = ref.rayon_name(koatuu)
+        yield Finding(
+            kind="koatuu_address_mismatch",
+            severity="medium",
+            title="КОАТУУ не відповідає області в адресі",
+            description=(
+                f"Код КОАТУУ {str(koatuu)[:5]} належить до {oblast}"
+                + (f" ({rayon})" if rayon else "")
+                + ", але в адресі жодного ключового слова цієї області "
+                "не знайдено — ймовірна плутанина між реєстрами."
+            ),
+            evidence={
+                "koatuu": koatuu,
+                "expected_oblast": oblast,
+                "expected_rayon": rayon,
+                "address": address,
+                "cadastral": row[0],
+            },
+            land_excel_rows=[i + 2],
+            owner_id=row[3] or "",
+            owner_name=row[2] or "",
+            exposure_uah=rates.project_land_tax(row[9], row[10], koatuu),
+        )
+
+
+def detect_invalid_edrpou_checksum(ix: Index) -> Iterable[Finding]:
+    """ЄДРПОУ failing the published control-digit algorithm is almost
+    always a data-entry typo. Skip public bodies — their legacy IDs
+    sometimes legitimately fail the checksum."""
+    rates = _tax_rates_ref()
+    seen: dict[str, list[tuple[int, list[Any]]]] = defaultdict(list)
+    for i, row in enumerate(ix.land):
+        tax_id = row[3]
+        if not tax_id or len(str(tax_id)) != 8:
+            continue
+        if _is_public_owner(row[2] or ""):
+            continue
+        if edrpou_checksum_valid(tax_id):
+            continue
+        seen[str(tax_id)].append((i + 2, row))
+
+    for tax_id, entries in seen.items():
+        first = entries[0][1]
+        total_value = sum((r[9] or 0.0) for _, r in entries)
+        total_share = entries[0][1][10] if entries else 1.0
+        yield Finding(
+            kind="invalid_edrpou_checksum",
+            severity="medium",
+            title="ЄДРПОУ не проходить контрольну суму",
+            description=(
+                "Ідентифікатор юридичної особи не проходить контрольний "
+                "розряд за алгоритмом ДПС — майже завжди це опечатка, "
+                "через яку податкове повідомлення піде «в порожнечу»."
+            ),
+            evidence={
+                "edrpou": tax_id,
+                "owner_name": first[2],
+                "parcels_count": len(entries),
+                "total_value_uah": round(total_value, 2),
+            },
+            land_excel_rows=[r for r, _ in entries],
+            owner_id=tax_id,
+            owner_name=first[2] or "",
+            exposure_uah=rates.project_land_tax(total_value, total_share, first[1]),
+        )
 
 
 def detect_public_owner_as_private(ix: Index) -> Iterable[Finding]:
+    rates = _tax_rates_ref()
     for i, row in enumerate(ix.land):
         form = (row[4] or "").lower()
         if "приват" not in form:
@@ -364,7 +433,7 @@ def detect_public_owner_as_private(ix: Index) -> Iterable[Finding]:
                 land_excel_rows=[i + 2],
                 owner_id=row[3] or "",
                 owner_name=row[2] or "",
-                exposure_uah=row[9] or 0.0,
+                exposure_uah=rates.project_land_tax(row[9], row[10], row[1]),
             )
 
 
@@ -480,6 +549,7 @@ ALL_DETECTORS: tuple = (
     detect_residential_no_building,
     detect_name_mismatch,
     detect_koatuu_address_mismatch,
+    detect_invalid_edrpou_checksum,
     detect_public_owner_as_private,
     detect_share_overflow,
     detect_value_outlier,
@@ -495,6 +565,7 @@ KIND_TITLES: dict[str, str] = {
     "residential_no_building": "Житлова ділянка без будівлі",
     "name_mismatch": "Різне ПІБ за одним ID",
     "koatuu_address_mismatch": "КОАТУУ ≠ область в адресі",
+    "invalid_edrpou_checksum": "ЄДРПОУ з невірним контрольним розрядом",
     "public_owner_as_private": "Орган влади як «Приватна»",
     "share_overflow": "Сума часток > площі",
     "value_outlier": "Аномальна грошова оцінка",

@@ -60,6 +60,71 @@ function formatSize(bytes) {
 wireDrop("land", "landFile");
 wireDrop("realestate", "reFile");
 
+loadReferencesBadge();
+
+async function loadReferencesBadge() {
+  const label = document.getElementById("refBadgeLabel");
+  const pop = document.getElementById("refPop");
+  try {
+    const r = await fetch("/api/references/status");
+    if (!r.ok) throw new Error("status " + r.status);
+    const data = await r.json();
+    const parts = [];
+    if (data.koatuu) parts.push("КОАТУУ");
+    if (data.tax_rates) parts.push("ставки");
+    if (data.edrpou_checksum) parts.push("ЄДРПОУ");
+    label.textContent = "довідники: " + parts.join(" · ");
+    pop.replaceChildren(makeRefPop(data));
+  } catch (e) {
+    label.textContent = "довідники: недоступні";
+    pop.replaceChildren(document.createTextNode("Не вдалося завантажити /api/references/status"));
+  }
+}
+
+function makeRefPop(data) {
+  const frag = document.createDocumentFragment();
+  const h = document.createElement("h4");
+  h.textContent = "Зовнішні довідники, з яких зараз працює детектор";
+  frag.appendChild(h);
+  frag.appendChild(refPopItem("КОАТУУ", data.koatuu, k => [
+    `${k.oblasts} областей · ${k.rayons} районів`,
+    `джерело: ${k.source}`,
+    `завантажено з: ${k.loaded_from}${k.version ? ` · v${k.version}` : ""}`,
+  ]));
+  frag.appendChild(refPopItem("Податкові ставки", data.tax_rates, t => [
+    `${t.source}`,
+    `МЗП: ${t.minimum_wage_uah} ₴ · ставка землі: ${t.defaults?.land_tax_rate_pct_of_value ?? "?"} % від НГО`,
+    `завантажено з: ${t.loaded_from}${t.version ? ` · v${t.version}` : ""}`,
+  ]));
+  frag.appendChild(refPopItem("ЄДРПОУ checksum", data.edrpou_checksum, e => [
+    e.source,
+    e.note,
+  ]));
+  return frag;
+}
+
+function refPopItem(title, entry, linesOf) {
+  const el = document.createElement("div");
+  el.className = "ref-pop-item";
+  const b = document.createElement("b");
+  b.textContent = title;
+  el.appendChild(b);
+  if (!entry) {
+    const m = document.createElement("div");
+    m.className = "muted";
+    m.textContent = "недоступно";
+    el.appendChild(m);
+    return el;
+  }
+  for (const line of linesOf(entry)) {
+    const d = document.createElement("div");
+    d.className = "muted";
+    d.textContent = line;
+    el.appendChild(d);
+  }
+  return el;
+}
+
 form.addEventListener("submit", async e => {
   e.preventDefault();
   errorBox.hidden = true;
@@ -207,7 +272,7 @@ function renderResult(root, { stats, elapsed, filename, objectUrl }) {
   kpi.className = "kpi-grid";
   kpi.append(
     makeKpi({ icon: ICONS.target, label: "Розбіжностей знайдено", value: nfInt.format(stats.findingsTotal), hint: "у аркуші «Розбіжності»" }),
-    makeKpi({ icon: ICONS.coins, label: "Фінансовий ризик", value: exposure.value, unit: exposure.unit, hint: "сумарна оцінка ділянок у розбіжностях", accent: true }),
+    makeKpi({ icon: ICONS.coins, label: "Річні втрати бюджету", value: exposure.value, unit: exposure.unit, hint: "проєкція за ставками ПКУ (ст. 266, 274)", accent: true }),
     makeKpi({ icon: ICONS.users, label: "Унікальних власників", value: nfInt.format(stats.owners), hint: "один рядок на податковий номер" }),
   );
   root.appendChild(kpi);

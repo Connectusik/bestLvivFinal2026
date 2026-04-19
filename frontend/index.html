@@ -26,7 +26,12 @@
         <span class="dot dot-live"></span>
         працює локально
       </span>
-      <span class="pill pill-ghost">v2.0</span>
+      <span class="pill pill-ref" id="refBadge" tabindex="0" aria-label="Стан довідників">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l9 4v6c0 5-4 9-9 10-5-1-9-5-9-10V6l9-4z"/><path d="M9 12l2 2 4-4"/></svg>
+        <span id="refBadgeLabel">довідники…</span>
+        <div class="ref-pop" id="refPop" role="tooltip"></div>
+      </span>
+      <span class="pill pill-ghost">v2.1</span>
     </div>
   </div>
 </header>
@@ -39,9 +44,9 @@
       з розбіжностями, що коштують громаді грошей.
     </h1>
     <p class="hero-sub">
-      Нормалізуємо ПІБ, адреси та ідентифікатори, потім знаходимо 11 видів
-      розбіжностей, які напряму впливають на податкові надходження. Жодних
-      даних на сторонні сервери — обробка на вашій машині.
+      Нормалізуємо ПІБ, адреси та ідентифікатори, потім знаходимо 12 видів
+      розбіжностей на основі відкритих держ-довідників (КОАТУУ, ставки ПКУ,
+      ЄДРПОУ). Жодних даних на сторонні сервери — обробка на вашій машині.
     </p>
     <div class="hero-metrics" role="list">
       <div class="hero-metric" role="listitem">
@@ -49,8 +54,8 @@
         <div class="hero-metric-label">повний цикл на 42k рядків</div>
       </div>
       <div class="hero-metric" role="listitem">
-        <div class="hero-metric-num">11</div>
-        <div class="hero-metric-label">правил детекції розбіжностей</div>
+        <div class="hero-metric-num">12</div>
+        <div class="hero-metric-label">правил детекції + 3 відкриті довідники</div>
       </div>
       <div class="hero-metric" role="listitem">
         <div class="hero-metric-num">SHA-256</div>
@@ -161,7 +166,7 @@
           <span class="how-chip">Stage 2</span>
         </div>
         <h3>Пошук розбіжностей</h3>
-        <p class="how-lead">11 детекторів, чотири рівні серйозності.</p>
+        <p class="how-lead">12 детекторів із довідниками КОАТУУ та ставок ПКУ, чотири рівні серйозності.</p>
         <ul class="how-list how-list-sev">
           <li><span class="sev-tag sev-crit">Critical</span> нема кадастру, нема ID власника, дубль кадастру.</li>
           <li><span class="sev-tag sev-high">High</span> житлова без будівлі, нема площі, різне ПІБ на одному ID.</li>

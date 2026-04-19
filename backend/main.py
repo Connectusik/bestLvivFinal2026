@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from cleaner.pipeline import clean_to_xlsx
+from cleaner.references import koatuu, tax_rates
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -92,6 +93,20 @@ def clean(
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/references/status")
+def references_status() -> dict:
+    """Status of external reference data providers — shown in the UI badge."""
+    return {
+        "koatuu": koatuu().status(),
+        "tax_rates": tax_rates().status(),
+        "edrpou_checksum": {
+            "source": "Алгоритм контрольного розряду ЄДРПОУ (ДПС України)",
+            "loaded_from": "builtin",
+            "note": "чиста функція, без зовнішніх даних",
+        },
+    }
 
 
 if FRONTEND_DIR.exists():
