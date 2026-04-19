@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light dark" />
+<meta name="theme-color" content="#0b1020" media="(prefers-color-scheme: dark)" />
+<meta name="theme-color" content="#f6f8fc" media="(prefers-color-scheme: light)" />
+<title>ОТГ Audit · нормалізація реєстрів і пошук розбіжностей</title>
+<link rel="stylesheet" href="/static/styles.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%231e40af'/%3E%3Cstop offset='1' stop-color='%233b82f6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect fill='url(%23g)' width='64' height='64' rx='16'/%3E%3Ctext x='32' y='43' font-family='Inter,Arial' font-size='30' font-weight='700' fill='white' text-anchor='middle'%3EО%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+<div class="bg-grid" aria-hidden="true"></div>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="/">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h16"/><circle cx="19" cy="12" r="2.2" fill="currentColor" stroke="none"/></svg>
+      </span>
+      <span class="brand-name">ОТГ Audit</span>
+    </a>
+    <div class="topbar-meta">
+      <span class="pill pill-soft">
+        <span class="dot dot-live"></span>
+        працює локально
+      </span>
+      <span class="pill pill-ghost">v2.0</span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <span class="hero-eyebrow">MVP для ОТГ · 42 000 рядків за 5 секунд</span>
+    <h1>
+      Два реєстри на вхід — <span class="grad">один чистий Excel</span>
+      з розбіжностями, що коштують громаді грошей.
+    </h1>
+    <p class="hero-sub">
+      Нормалізуємо ПІБ, адреси та ідентифікатори, потім знаходимо 11 видів
+      розбіжностей, які напряму впливають на податкові надходження. Жодних
+      даних на сторонні сервери — обробка на вашій машині.
+    </p>
+    <div class="hero-metrics" role="list">
+      <div class="hero-metric" role="listitem">
+        <div class="hero-metric-num">5 с</div>
+        <div class="hero-metric-label">повний цикл на 42k рядків</div>
+      </div>
+      <div class="hero-metric" role="listitem">
+        <div class="hero-metric-num">11</div>
+        <div class="hero-metric-label">правил детекції розбіжностей</div>
+      </div>
+      <div class="hero-metric" role="listitem">
+        <div class="hero-metric-num">SHA-256</div>
+        <div class="hero-metric-label">аудит-слід на кожен звіт</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="upload-card">
+    <div class="step-head">
+      <span class="step-num">1</span>
+      <div>
+        <h2 class="step-title">Завантажте реєстри</h2>
+        <p class="step-sub">Підтримуються <code>.xlsx</code>, <code>.xlsm</code>, <code>.csv</code>. Файли не залишають вашої машини.</p>
+      </div>
+    </div>
+
+    <form id="form" novalidate>
+      <label class="drop" for="land">
+        <input id="land" name="land" type="file" accept=".xlsx,.xlsm,.csv" required />
+        <div class="drop-body">
+          <span class="drop-icon" aria-hidden="true">
+            <svg class="icon-idle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l3-3h12a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V7z"/><path d="M9 13h6M9 17h4M9 9h3"/></svg>
+            <svg class="icon-done" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+          </span>
+          <div class="drop-text">
+            <div class="drop-title">Земельний реєстр</div>
+            <div class="drop-hint">ДЗК / ДРРП · перетягніть або натисніть</div>
+            <div class="drop-file" id="landFile" hidden>
+              <span class="drop-file-name"></span>
+              <span class="drop-file-size"></span>
+              <button type="button" class="drop-file-clear" aria-label="Скинути файл">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </label>
+
+      <label class="drop" for="realestate">
+        <input id="realestate" name="realestate" type="file" accept=".xlsx,.xlsm,.csv" required />
+        <div class="drop-body">
+          <span class="drop-icon" aria-hidden="true">
+            <svg class="icon-idle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7v9a2 2 0 01-2 2h-4v-6h-6v6H5a2 2 0 01-2-2v-9z"/></svg>
+            <svg class="icon-done" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+          </span>
+          <div class="drop-text">
+            <div class="drop-title">Реєстр нерухомості</div>
+            <div class="drop-hint">ДРРП · перетягніть або натисніть</div>
+            <div class="drop-file" id="reFile" hidden>
+              <span class="drop-file-name"></span>
+              <span class="drop-file-size"></span>
+              <button type="button" class="drop-file-clear" aria-label="Скинути файл">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </label>
+
+      <button type="submit" id="btn" class="cta">
+        <span class="cta-spin" aria-hidden="true"></span>
+        <span class="cta-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
+        </span>
+        <span class="cta-label" id="btnLabel">Очистити та отримати Excel</span>
+      </button>
+    </form>
+
+    <p class="upload-foot">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15v2m0-12a7 7 0 017 7v3a2 2 0 01-2 2H7a2 2 0 01-2-2v-3a7 7 0 017-7z"/></svg>
+      Файли обробляються в пам'яті сервера й не зберігаються. У відповіді — SHA-256 кожного вхідного байта.
+    </p>
+  </section>
+
+  <section class="result" id="result" hidden aria-live="polite"></section>
+  <section class="error" id="error" hidden role="alert"></section>
+
+  <section class="how">
+    <div class="step-head">
+      <span class="step-num step-num-ghost">2</span>
+      <div>
+        <h2 class="step-title">Як влаштовано обробку</h2>
+        <p class="step-sub">Три послідовні стадії. Детектори запускаються <b>після</b> нормалізатора — жодних false-positives через «вул.» vs «вулиця».</p>
+      </div>
+    </div>
+
+    <div class="how-grid">
+      <article class="how-card">
+        <div class="how-top">
+          <span class="how-ix">01</span>
+          <span class="how-chip">Stage 1</span>
+        </div>
+        <h3>Нормалізація</h3>
+        <p class="how-lead">12 правил зводять реєстри до єдиного формату.</p>
+        <ul class="how-list">
+          <li><b>ПІБ</b> у форматі <code>Прізвище Ім'я По-батькові</code>, латинські <code>i/I</code> → <code>і/І</code>.</li>
+          <li><b>Адреси</b>: <code>вул. / пров. / пл. / буд. / кв.</code> замість розгорнутих.</li>
+          <li><b>Податкові номери</b> — тільки цифри, у файлі явно тип «Текст».</li>
+          <li><b>Дати й числа</b> — справжні, <code>#VALUE!</code> відкидається.</li>
+          <li><b>Частка</b> пуста → <code>1.0</code> + прапорець «Частка невідома».</li>
+        </ul>
+      </article>
+
+      <article class="how-card">
+        <div class="how-top">
+          <span class="how-ix">02</span>
+          <span class="how-chip">Stage 2</span>
+        </div>
+        <h3>Пошук розбіжностей</h3>
+        <p class="how-lead">11 детекторів, чотири рівні серйозності.</p>
+        <ul class="how-list how-list-sev">
+          <li><span class="sev-tag sev-crit">Critical</span> нема кадастру, нема ID власника, дубль кадастру.</li>
+          <li><span class="sev-tag sev-high">High</span> житлова без будівлі, нема площі, різне ПІБ на одному ID.</li>
+          <li><span class="sev-tag sev-med">Medium</span> КОАТУУ ≠ область, орган як «Приватна», сума часток &gt; площі.</li>
+          <li><span class="sev-tag sev-low">Low</span> аномальна оцінка, дата до 1991.</li>
+        </ul>
+      </article>
+
+      <article class="how-card">
+        <div class="how-top">
+          <span class="how-ix">03</span>
+          <span class="how-chip">Stage 3</span>
+        </div>
+        <h3>Один Excel на виході</h3>
+        <p class="how-lead">П'ять аркушів — від реєстру власників до аудит-сліду.</p>
+        <ol class="how-list how-list-num">
+          <li><b>Реєстр власників</b> — по одному рядку на податковий номер.</li>
+          <li><b>Земельні ділянки</b> — нормалізовано, <span class="swatch hot"></span> змінена клітинка.</li>
+          <li><b>Нерухомість</b> — нормалізовано, <span class="swatch cold"></span> рядок зі змінами.</li>
+          <li><b>Розбіжності</b> — з посиланнями на рядки інших аркушів.</li>
+          <li><b>Метадані</b> — SHA-256, дата, версія, 12 трансформацій.</li>
+        </ol>
+      </article>
+    </div>
+  </section>
+
+  <footer>
+    <div class="footer-inner">
+      <span class="brand brand-sm">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h16"/><circle cx="19" cy="12" r="2.2" fill="currentColor" stroke="none"/></svg>
+        </span>
+        ОТГ Audit
+      </span>
+      <span class="muted">MVP · on-premise · жодних даних на сторонні сервери</span>
+    </div>
+  </footer>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
